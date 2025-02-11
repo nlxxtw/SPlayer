@@ -122,7 +122,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           key: "cloud",
           link: "cloud",
           label: "我的云盘",
-          show: isElectron && dataStore.loginType !== "uid",
+          show: isLogin() === 1,
           icon: renderIcon("Cloud"),
         },
         {

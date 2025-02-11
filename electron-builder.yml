@@ -84,7 +84,7 @@ dmg:
 # Linux 平台配置
 linux:
   # 可执行文件名
-  executableName: SPlayer
+  executableName: splayer
   # 应用程序的图标文件路径
   icon: public/icons/favicon-512x512.png
   # 构建类型

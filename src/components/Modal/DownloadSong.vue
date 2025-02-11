@@ -31,7 +31,7 @@
             </n-flex>
           </n-radio-group>
         </n-collapse-item>
-        <n-collapse-item v-if="isElectron" title="下载路径" name="path">
+        <n-collapse-item v-if="isElectron" title="本次下载路径" name="path">
           <n-input-group>
             <n-input :value="downloadPath || '未配置下载目录'" disabled>
               <template #prefix>
@@ -137,7 +137,7 @@ const changeDownloadPath = async () => {
 const download = async () => {
   if (!songData.value) return;
   loading.value = true;
-  downloadPath.value = settingStore.downloadPath;
+  if (settingStore.downloadPath) downloadPath.value = settingStore.downloadPath;
   try {
     // 获取下载链接
     const result = await songDownloadUrl(props.id, songLevelChoosed.value);
@@ -184,7 +184,7 @@ const electronDownload = async (url: string, songName: string, fileType: string)
   }
   // 下载歌曲
   const config = {
-    fileName: songName,
+    fileName: songName.replace(/[/:*?"<>|]/g, "&"),
     fileType,
     path: downloadPath.value,
     downloadMeta,

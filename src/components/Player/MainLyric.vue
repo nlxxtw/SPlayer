@@ -571,8 +571,10 @@ onBeforeUnmount(() => {
       }
     }
   }
-  &.record,
   &.pure {
+    :deep(.n-scrollbar-content) {
+      padding: 0 80px;
+    }
     .lyric-content {
       .placeholder {
         &:first-child {
@@ -586,11 +588,6 @@ onBeforeUnmount(() => {
           transform: scale(0.9);
         }
       }
-    }
-  }
-  &.pure {
-    :deep(.n-scrollbar-content) {
-      padding: 0 80px;
     }
   }
   &:hover {
