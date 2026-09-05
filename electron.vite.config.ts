@@ -1,19 +1,30 @@
-import { resolve } from "path";
-import { MainEnv } from "./env";
-import { defineConfig, externalizeDepsPlugin, loadEnv } from "electron-vite";
-import { NaiveUiResolver } from "unplugin-vue-components/resolvers";
 import vue from "@vitejs/plugin-vue";
+import { defineConfig, loadEnv } from "electron-vite";
+import { resolve } from "path";
 import AutoImport from "unplugin-auto-import/vite";
+import { NaiveUiResolver } from "unplugin-vue-components/resolvers";
 import Components from "unplugin-vue-components/vite";
 import viteCompression from "vite-plugin-compression";
+import type { MainEnv } from "./env";
+// import VueDevTools from "vite-plugin-vue-devtools";
 import wasm from "vite-plugin-wasm";
 
-export default defineConfig(({ command, mode }) => {
+const commonResolve = {
+  alias: {
+    "@": resolve(__dirname, "src/"),
+    "@emi": resolve(__dirname, "native/external-media-integration"),
+    "@shared": resolve(__dirname, "src/types/shared"),
+    "@opencc": resolve(__dirname, "native/ferrous-opencc-wasm/pkg"),
+    "@native": resolve(__dirname, "native"),
+    "@windows": resolve(__dirname, "windows"),
+  },
+};
+
+export default defineConfig(({ mode }) => {
   // 读取环境变量
   const getEnv = (name: keyof MainEnv): string => {
     return loadEnv(mode, process.cwd())[name];
   };
-  console.log(command);
   // 获取端口
   const webPort: number = Number(getEnv("VITE_WEB_PORT") || 14558);
   const servePort: number = Number(getEnv("VITE_SERVER_PORT") || 25884);
@@ -21,21 +32,22 @@ export default defineConfig(({ command, mode }) => {
   return {
     // 主进程
     main: {
-      plugins: [externalizeDepsPlugin()],
       build: {
         publicDir: resolve(__dirname, "public"),
         rollupOptions: {
           input: {
             index: resolve(__dirname, "electron/main/index.ts"),
-            lyric: resolve(__dirname, "web/lyric.html"),
-            loading: resolve(__dirname, "web/loading.html"),
+            "workers/audio-analysis.worker": resolve(
+              __dirname,
+              "electron/main/workers/audio-analysis.worker.ts",
+            ),
           },
         },
       },
+      resolve: commonResolve,
     },
     // 预加载
     preload: {
-      plugins: [externalizeDepsPlugin()],
       build: {
         rollupOptions: {
           input: {
@@ -43,12 +55,14 @@ export default defineConfig(({ command, mode }) => {
           },
         },
       },
+      resolve: commonResolve,
     },
     // 渲染进程
     renderer: {
       root: ".",
       plugins: [
         vue(),
+        // mode === "development" && VueDevTools(),
         AutoImport({
           imports: [
             "vue",
@@ -69,11 +83,7 @@ export default defineConfig(({ command, mode }) => {
         viteCompression(),
         wasm(),
       ],
-      resolve: {
-        alias: {
-          "@": resolve(__dirname, "src/"),
-        },
-      },
+      resolve: commonResolve,
       css: {
         preprocessorOptions: {
           scss: {
@@ -88,7 +98,7 @@ export default defineConfig(({ command, mode }) => {
           "/api": {
             target: `http://127.0.0.1:${servePort}`,
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api/, "/api/"),
+            rewrite: (path) => path.replace(/^\/api/, "/api"),
           },
         },
       },
@@ -101,7 +111,10 @@ export default defineConfig(({ command, mode }) => {
         rollupOptions: {
           input: {
             index: resolve(__dirname, "index.html"),
+            loading: resolve(__dirname, "web/loading/index.html"),
+            "taskbar-lyric": resolve(__dirname, "windows/taskbar-lyric/index.html"),
           },
+          external: ["external-media-integration.node"],
           output: {
             manualChunks: {
               stores: ["src/stores/data.ts", "src/stores/index.ts"],

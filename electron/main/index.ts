@@ -1,196 +1,115 @@
-import { app, shell, BrowserWindow, BrowserWindowConstructorOptions } from "electron";
 import { electronApp } from "@electron-toolkit/utils";
+import { app, BrowserWindow, session } from "electron";
+import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { release, type } from "os";
-import { isDev, isMac, appName } from "./utils";
+import initAppServer from "../server";
+import initIpc from "./ipc";
+import { shutdownMedia } from "./ipc/ipc-media";
+import { processLog } from "./logger";
+import { MpvService } from "./services/MpvService";
+import { SocketService } from "./services/SocketService";
 import { unregisterShortcuts } from "./shortcut";
 import { initTray, MainTray } from "./tray";
-import { initThumbar, Thumbar } from "./thumbar";
-import { type StoreType, initStore } from "./store";
-import Store from "electron-store";
-import initAppServer from "../server";
-import initIpcMain from "./ipcMain";
-import log from "./logger";
-// icon
-import icon from "../../public/icons/favicon.png?asset";
+import { isMac } from "./utils/config";
+import { trySendCustomProtocol } from "./utils/protocol";
+import { initSingleLock } from "./utils/single-lock";
+import loadWindow from "./windows/load-window";
+import mainWindow from "./windows/main-window";
+import { setAppQuitting } from "./utils/lifecycle";
+import { closeTaskbarLyricWindow } from "./windows/taskbar-lyric-window";
 
 // 屏蔽报错
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 
-// 模拟打包
-Object.defineProperty(app, "isPackaged", {
-  get() {
-    return true;
-  },
-});
+// 便携模式下设置用户数据路径
+if (process.env.PORTABLE_EXECUTABLE_DIR) {
+  processLog.info(
+    "🔍 Portable mode detected, setting userData path to:",
+    join(process.env.PORTABLE_EXECUTABLE_DIR, "UserData"),
+  );
+  const userDataPath = join(process.env.PORTABLE_EXECUTABLE_DIR, "UserData");
+  if (!existsSync(userDataPath)) mkdirSync(userDataPath, { recursive: true });
+  app.setPath("userData", userDataPath);
+}
 
 // 主进程
 class MainProcess {
   // 窗口
   mainWindow: BrowserWindow | null = null;
-  lyricWindow: BrowserWindow | null = null;
-  loadingWindow: BrowserWindow | null = null;
-  // store
-  store: Store<StoreType> | null = null;
+  loadWindow: BrowserWindow | null = null;
   // 托盘
   mainTray: MainTray | null = null;
-  // 工具栏
-  thumbar: Thumbar | null = null;
   // 是否退出
   isQuit: boolean = false;
   constructor() {
-    log.info("🚀 Main process startup");
-    // 禁用 Windows 7 的 GPU 加速功能
-    if (release().startsWith("6.1") && type() == "Windows_NT") app.disableHardwareAcceleration();
-    // 单例锁
-    if (!app.requestSingleInstanceLock()) {
-      log.error("❌ There is already a program running and this process is terminated");
-      app.quit();
-      process.exit(0);
-    } else this.showWindow();
-    // 准备就绪
-    app.on("ready", async () => {
-      log.info("🚀 Application Process Startup");
+    processLog.info("🚀 Main process startup");
+
+    // 在 Windows、Linux 和 MacOS 上禁用自带的媒体控件功能，因为我们已经通过原生插件实现媒体控件的集成了
+    const platform = process.platform;
+    const hasNativeMediaSupport = ["win32", "linux", "darwin"].includes(platform);
+
+    if (hasNativeMediaSupport) {
+      app.commandLine.appendSwitch(
+        "disable-features",
+        "HardwareMediaKeyHandling,MediaSessionService",
+      );
+    }
+
+    if (platform === "win32") {
+      // GPU 稳定性配置：禁用 GPU 进程崩溃次数限制，允许 GPU 进程自动恢复
+      app.commandLine.appendSwitch("disable-gpu-process-crash-limit");
+    }
+
+    // 防止后台时渲染进程被休眠
+    app.commandLine.appendSwitch("disable-renderer-backgrounding");
+    app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+
+    // 程序单例锁
+    initSingleLock();
+    // 监听应用事件
+    this.handleAppEvents();
+    // Electron 初始化完成后
+    // 某些 API 只有在此事件发生后才能使用
+    app.whenReady().then(async () => {
+      processLog.info("🚀 Application Process Startup");
+
+      // 配置 COOP/COEP/CORP 头，FFmpeg 需要
+      session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = { ...details.responseHeaders };
+        const url = new URL(details.url);
+
+        // 桌面歌词窗口需要透明背景，必须排除严格的安全策略
+        if (url.searchParams.get("win") === "desktop-lyric") {
+          callback({ responseHeaders });
+          return;
+        }
+
+        // 同样可以解决 CORS 限制，但为了避免安全问题，等真有需要的时候再开
+        // responseHeaders["Access-Control-Allow-Origin"] = ["*"];
+        // responseHeaders["Access-Control-Allow-Headers"] = ["*"];
+
+        // COOP/COEP/CORP 配置
+        responseHeaders["Cross-Origin-Opener-Policy"] = ["same-origin"];
+        responseHeaders["Cross-Origin-Embedder-Policy"] = ["require-corp"];
+        responseHeaders["Cross-Origin-Resource-Policy"] = ["cross-origin"];
+
+        callback({ responseHeaders });
+      });
+
       // 设置应用程序名称
       electronApp.setAppUserModelId("com.imsyy.splayer");
-      // 初始化 store
-      this.store = initStore();
       // 启动主服务进程
       await initAppServer();
-      // 启动进程
-      this.createLoadingWindow();
-      this.createMainWindow();
-      this.createLyricsWindow();
-      this.handleAppEvents();
-      this.handleWindowEvents();
+      // 启动窗口
+      this.loadWindow = loadWindow.create();
+      this.mainWindow = mainWindow.create();
       // 注册其他服务
-      this.mainTray = initTray(this.mainWindow!, this.lyricWindow!);
-      this.thumbar = initThumbar(this.mainWindow!);
-      // 注册主进程事件
-      initIpcMain(
-        this.mainWindow,
-        this.lyricWindow,
-        this.loadingWindow,
-        this.mainTray,
-        this.thumbar,
-        this.store,
-      );
+      this.mainTray = initTray(this.mainWindow!);
+      // 注册 IPC 通信
+      initIpc();
+      // 自动启动 WebSocket
+      SocketService.tryAutoStart();
     });
-  }
-  // 创建窗口
-  createWindow(options: BrowserWindowConstructorOptions = {}): BrowserWindow {
-    const defaultOptions: BrowserWindowConstructorOptions = {
-      title: appName,
-      width: 1280,
-      height: 720,
-      frame: false,
-      center: true,
-      // 图标
-      icon,
-      webPreferences: {
-        preload: join(__dirname, "../preload/index.mjs"),
-        // 禁用渲染器沙盒
-        sandbox: false,
-        // 禁用同源策略
-        webSecurity: false,
-        // 允许 HTTP
-        allowRunningInsecureContent: true,
-        // 禁用拼写检查
-        spellcheck: false,
-        // 启用 Node.js
-        nodeIntegration: true,
-        nodeIntegrationInWorker: true,
-        // 启用上下文隔离
-        contextIsolation: false,
-      },
-    };
-    // 合并参数
-    options = Object.assign(defaultOptions, options);
-    // 创建窗口
-    const win = new BrowserWindow(options);
-    return win;
-  }
-  // 创建主窗口
-  createMainWindow() {
-    // 窗口配置项
-    const options: BrowserWindowConstructorOptions = {
-      width: this.store?.get("window").width,
-      height: this.store?.get("window").height,
-      minHeight: 800,
-      minWidth: 1280,
-      // 菜单栏
-      titleBarStyle: "customButtonsOnHover",
-      // 立即显示窗口
-      show: false,
-    };
-    // 初始化窗口
-    this.mainWindow = this.createWindow(options);
-
-    // 渲染路径
-    if (isDev && process.env["ELECTRON_RENDERER_URL"]) {
-      this.mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-    } else {
-      const port = Number(import.meta.env["VITE_SERVER_PORT"] || 25884);
-      this.mainWindow.loadURL(`http://127.0.0.1:${port}`);
-    }
-
-    // 配置网络代理
-    if (this.store?.get("proxy")) {
-      this.mainWindow.webContents.session.setProxy({ proxyRules: this.store?.get("proxy") });
-    }
-
-    // 窗口打开处理程序
-    this.mainWindow.webContents.setWindowOpenHandler((details) => {
-      const { url } = details;
-      if (url.startsWith("https://") || url.startsWith("http://")) {
-        shell.openExternal(url);
-      }
-      return { action: "deny" };
-    });
-  }
-  // 创建加载窗口
-  createLoadingWindow() {
-    // 初始化窗口
-    this.loadingWindow = this.createWindow({
-      width: 800,
-      height: 560,
-      maxWidth: 800,
-      maxHeight: 560,
-      resizable: false,
-    });
-    // 渲染路径
-    this.loadingWindow.loadFile(join(__dirname, "../main/web/loading.html"));
-  }
-  // 创建桌面歌词窗口
-  createLyricsWindow() {
-    // 初始化窗口
-    this.lyricWindow = this.createWindow({
-      width: this.store?.get("lyric").width || 800,
-      height: this.store?.get("lyric").height || 180,
-      minWidth: 440,
-      minHeight: 120,
-      maxWidth: 1600,
-      maxHeight: 300,
-      // 窗口位置
-      x: this.store?.get("lyric").x,
-      y: this.store?.get("lyric").y,
-      transparent: true,
-      backgroundColor: "rgba(0, 0, 0, 0)",
-      alwaysOnTop: true,
-      resizable: true,
-      movable: true,
-      // 不在任务栏显示
-      skipTaskbar: true,
-      // 窗口不能最小化
-      minimizable: false,
-      // 窗口不能最大化
-      maximizable: false,
-      // 窗口不能进入全屏状态
-      fullscreenable: false,
-      show: false,
-    });
-    // 渲染路径
-    this.lyricWindow.loadFile(join(__dirname, "../main/web/lyric.html"));
   }
   // 应用程序事件
   handleAppEvents() {
@@ -198,94 +117,56 @@ class MainProcess {
     app.on("window-all-closed", () => {
       if (!isMac) app.quit();
       this.mainWindow = null;
-      this.loadingWindow = null;
+      this.loadWindow = null;
     });
 
     // 应用被激活
     app.on("activate", () => {
+      if (isMac) {
+        mainWindow.showWindow();
+        return;
+      }
+
       const allWindows = BrowserWindow.getAllWindows();
       if (allWindows.length) {
         allWindows[0].focus();
-      } else {
-        this.createMainWindow();
       }
-    });
-
-    // 新增 session
-    app.on("second-instance", () => {
-      this.showWindow();
     });
 
     // 自定义协议
     app.on("open-url", (_, url) => {
-      console.log("Received custom protocol URL:", url);
-    });
-
-    // 将要退出
-    app.on("will-quit", () => {
-      // 注销全部快捷键
-      unregisterShortcuts();
+      processLog.log("🔗 Received custom protocol URL:", url);
+      trySendCustomProtocol(url);
     });
 
     // 退出前
-    app.on("before-quit", () => {
-      this.isQuit = true;
-    });
-  }
-  // 窗口事件
-  handleWindowEvents() {
-    this.mainWindow?.on("ready-to-show", () => {
-      if (!this.mainWindow) return;
-      this.thumbar = initThumbar(this.mainWindow);
-    });
-    this.mainWindow?.on("show", () => {
-      // this.mainWindow?.webContents.send("lyricsScroll");
-    });
-    this.mainWindow?.on("focus", () => {
-      this.saveBounds();
-    });
-    // 移动或缩放
-    this.mainWindow?.on("resized", () => {
-      // 若处于全屏则不保存
-      if (this.mainWindow?.isFullScreen()) return;
-      this.saveBounds();
-    });
-    this.mainWindow?.on("moved", () => {
-      this.saveBounds();
-    });
-
-    // 歌词窗口缩放
-    this.lyricWindow?.on("resized", () => {
-      const bounds = this.lyricWindow?.getBounds();
-      if (bounds) {
-        const { width, height } = bounds;
-        this.store?.set("lyric", { ...this.store?.get("lyric"), width, height });
-      }
-    });
-
-    // 窗口关闭
-    this.mainWindow?.on("close", (event) => {
+    app.on("before-quit", (event) => {
+      if (this.isQuit) return;
       event.preventDefault();
-      if (this.isQuit) {
-        app.exit();
-      } else {
-        this.mainWindow?.hide();
-      }
+      this.isQuit = true;
+      setAppQuitting();
+      (async () => {
+        // 注销全部快捷键
+        unregisterShortcuts();
+        // 清理媒体集成资源
+        shutdownMedia();
+        // 关闭任务栏歌词窗口（停止原生 watcher / service）
+        closeTaskbarLyricWindow();
+        // 停止 MPV 服务
+        const mpvService = MpvService.getInstance();
+        try {
+          await mpvService.stop();
+          processLog.info("MPV 进程已停止");
+        } catch (err) {
+          processLog.error("停止 MPV 进程失败", err);
+        } finally {
+          mpvService.terminate();
+          processLog.info("MPV 进程已终止");
+        }
+        processLog.info("全部服务已停止，退出应用...");
+        app.exit(0);
+      })();
     });
-  }
-  // 更新窗口大小
-  saveBounds() {
-    if (this.mainWindow?.isFullScreen()) return;
-    const bounds = this.mainWindow?.getBounds();
-    if (bounds) this.store?.set("window", bounds);
-  }
-  // 显示窗口
-  showWindow() {
-    if (this.mainWindow) {
-      this.mainWindow.show();
-      if (this.mainWindow.isMinimized()) this.mainWindow.restore();
-      this.mainWindow.focus();
-    }
   }
 }
 

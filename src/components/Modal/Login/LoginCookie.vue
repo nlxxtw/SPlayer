@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import type { LoginType } from "@/types/main";
-import { isElectron } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
 
 const emit = defineEmits<{
   close: [];
@@ -38,7 +38,7 @@ const openWeb = () => {
   window.$dialog.info({
     title: "使用前告知",
     content:
-      "请知悉，该功能仍旧无法确保账号的安全性！请自行决定是否使用！如遇打开窗口后页面出现白屏或者无法点击等情况，请关闭后再试。在登录完成后，请点击菜单栏中的 “登录完成” 按钮以完成登录（ 通常位于窗口的左上角，macOS 位于顶部的全局菜单栏中 ）",
+      "请知悉，该功能仍旧无法确保账号的安全性！请自行决定是否使用！如遇打开窗口后页面出现白屏或者无法点击等情况，请关闭后重试",
     positiveText: "我已了解",
     negativeText: "取消",
     onPositiveClick: () => window.electron.ipcRenderer.send("open-login-web"),
@@ -52,12 +52,25 @@ const login = async () => {
     return;
   }
   cookie.value = cookie.value.trim();
-  console.log(cookie.value.endsWith(";"));
 
-  // 是否为有效 Cookie
-  if (!cookie.value.includes("MUSIC_U") || !cookie.value.endsWith(";")) {
-    window.$message.warning("请输入有效的 Cookie");
+  // 检查是否包含 MUSIC_U
+  let decodedCookie = cookie.value;
+  try {
+    // 如果包含URL编码字符，尝试解码检查
+    if (cookie.value.includes("%")) {
+      decodedCookie = decodeURIComponent(cookie.value);
+    }
+  } catch {}
+  // 检查是否包含 MUSIC_U
+  const hasMusicU = cookie.value.includes("MUSIC_U") || decodedCookie.includes("MUSIC_U");
+  if (!hasMusicU) {
+    window.$message.warning("请输入有效的 Cookie（必须包含 MUSIC_U）");
     return;
+  }
+  // 如果原始cookie没有以分号结尾，自动添加（setCookies会处理URL编码的情况）
+  let finalCookie = cookie.value;
+  if (!decodedCookie.endsWith(";") && !cookie.value.endsWith("%3B")) {
+    finalCookie += ";";
   }
   // 写入 Cookie
   try {
@@ -67,7 +80,7 @@ const login = async () => {
       "saveLogin",
       {
         code: 200,
-        cookie: cookie.value,
+        cookie: finalCookie,
       },
       "cookie",
     );

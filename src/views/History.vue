@@ -39,7 +39,6 @@
         v-if="dataStore.historyList.length > 0"
         :data="dataStore.historyList"
         :loading="true"
-        hiddenCover
         hiddenSize
       />
       <n-empty
@@ -58,8 +57,9 @@
 
 <script setup lang="ts">
 import { useDataStore } from "@/stores";
-import player from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
+const player = usePlayerController();
 const dataStore = useDataStore();
 
 // 清空最近播放

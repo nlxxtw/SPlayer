@@ -2,7 +2,7 @@
   <div :key="artistId" :class="['artist', { small: listScrolling }]">
     <Transition name="fade" mode="out-in">
       <div v-if="artistDetailData" class="detail">
-        <div class="cover">
+        <div v-if="!settingStore.hiddenCovers.artistDetail" class="cover">
           <n-image
             :src="artistDetailData.coverSize?.m || artistDetailData.cover"
             :previewed-img-props="{ style: { borderRadius: '8px' } }"
@@ -14,7 +14,7 @@
           >
             <template #placeholder>
               <div class="cover-loading">
-                <img src="/images/artist.jpg?assest" class="loading-img" alt="loading-img" />
+                <img src="/images/artist.jpg?asset" class="loading-img" alt="loading-img" />
               </div>
             </template>
           </n-image>
@@ -27,7 +27,11 @@
         </div>
         <div class="data">
           <div class="name text-hidden">
-            <n-text class="name-text">{{ artistDetailData.name || "未知艺术家" }}</n-text>
+            <n-text class="name-text">{{
+              settingStore.hideBracketedContent
+                ? removeBrackets(artistDetailData.name)
+                : artistDetailData.name || "未知艺术家"
+            }}</n-text>
             <n-text v-if="artistDetailData?.alia" class="name-alias" depth="3">
               {{ artistDetailData.alia || "未知艺术家" }}
             </n-text>
@@ -62,17 +66,13 @@
               </div>
             </n-flex>
             <!-- 简介 -->
-            <n-ellipsis
+            <n-text
               v-if="artistDetailData.description"
-              :line-clamp="1"
-              :tooltip="{
-                trigger: 'click',
-                placement: 'bottom',
-                width: 'trigger',
-              }"
+              class="description text-hidden"
+              @click="openDescModal(artistDetailData.description, '歌手简介')"
             >
               {{ artistDetailData.description }}
-            </n-ellipsis>
+            </n-text>
           </n-collapse-transition>
           <n-flex class="menu" justify="space-between">
             <n-flex class="left" align="flex-end">
@@ -114,7 +114,7 @@
         </div>
       </div>
       <div v-else class="detail">
-        <n-skeleton class="cover" />
+        <n-skeleton v-if="!settingStore.hiddenCovers.artistDetail" class="cover" />
         <div class="data">
           <n-skeleton :repeat="4" text />
         </div>
@@ -154,14 +154,16 @@
 <script setup lang="ts">
 import type { DropdownOption } from "naive-ui";
 import type { ArtistType } from "@/types/main";
-import { coverLoaded, renderIcon } from "@/utils/helper";
+import { coverLoaded, renderIcon, copyData, getShareUrl } from "@/utils/helper";
 import { renderToolbar } from "@/utils/meta";
+import { openDescModal, openBatchList } from "@/utils/modal";
 import { artistDetail } from "@/api/artist";
-import { formatArtistsList } from "@/utils/format";
+import { formatArtistsList, removeBrackets } from "@/utils/format";
 import { useDataStore, useSettingStore } from "@/stores";
 import { toLikeArtist } from "@/utils/auth";
 import ArtistSongs from "./songs.vue";
 
+const route = useRoute();
 const router = useRouter();
 const dataStore = useDataStore();
 const settingStore = useSettingStore();
@@ -170,10 +172,10 @@ const settingStore = useSettingStore();
 const componentRef = ref<InstanceType<typeof ArtistSongs> | null>(null);
 
 // 歌手 ID
-const artistId = computed<number>(() => Number(router.currentRoute.value.query.id as string));
+const artistId = computed<number>(() => Number(route.query.id));
 
 // 歌手分类
-const artistType = ref<string>((router.currentRoute.value?.name as string) || "artist-songs");
+const artistType = ref<string>((route.name as string) || "artist-songs");
 
 // 歌手数据
 const artistDetailData = ref<ArtistType | null>(null);
@@ -183,6 +185,33 @@ const listScrolling = ref<boolean>(false);
 
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [
+  {
+    label: "批量操作",
+    key: "batch",
+    show: artistType.value === "artist-songs",
+    props: {
+      onClick: () => {
+        if (componentRef.value?.songData) {
+          openBatchList(
+            componentRef.value.songData,
+            false,
+            isLikeArtist.value ? artistId.value : undefined,
+          );
+        } else {
+          window.$message.warning("暂无歌曲可操作");
+        }
+      },
+    },
+    icon: renderIcon("Batch"),
+  },
+  {
+    label: "复制分享链接",
+    key: "copy",
+    props: {
+      onClick: () => copyData(getShareUrl("artist", artistId.value), "已复制分享链接到剪贴板"),
+    },
+    icon: renderIcon("Share"),
+  },
   {
     label: "打开源页面",
     key: "open",
@@ -237,15 +266,23 @@ const listScroll = (e: Event) => {
   listScrolling.value = scrollTop > 10;
 };
 
+// 监听路由更新
 onBeforeRouteUpdate((to) => {
   listScrolling.value = false;
-  if (to.matched[0].name !== "artist") return;
+  // 检查是否仍在 artist 路由下
+  const isArtistRoute = to.matched.some((m) => m.name === "artist");
+  if (!isArtistRoute) return;
   artistType.value = to.name as string;
-  const id = Number(to.query.id as string);
-  if (id && id !== artistId.value) getArtistDetail(id);
 });
 
-onMounted(() => getArtistDetail(artistId.value));
+// 监听 ID 变化
+watch(
+  () => artistId.value,
+  (val) => {
+    if (val) getArtistDetail(val);
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="scss" scoped>
@@ -325,7 +362,7 @@ onMounted(() => getArtistDetail(artistId.value));
           height: 40px;
         }
       }
-      :deep(.n-ellipsis) {
+      .description {
         margin-bottom: 8px;
         padding-left: 4px;
         cursor: pointer;

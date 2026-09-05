@@ -1,9 +1,14 @@
+import AppLayout from "@/layout/AppLayout.vue";
 import { type RouteRecordRaw } from "vue-router";
 
-const routes: Array<RouteRecordRaw> = [
+/**
+ * 应用路由
+ * @returns {Array<RouteRecordRaw>} 应用路由
+ */
+const appRoutes: Array<RouteRecordRaw> = [
   // 首页
   {
-    path: "",
+    path: "/",
     name: "home",
     component: () => import("@/views/Home/index.vue"),
   },
@@ -127,6 +132,26 @@ const routes: Array<RouteRecordRaw> = [
     },
     component: () => import("@/views/List/album.vue"),
   },
+  // 歌曲百科
+  {
+    path: "/song/wiki",
+    name: "song-wiki",
+    beforeEnter: (to, _, next) => {
+      if (!to.query.id) next({ path: "/403" });
+      else next();
+    },
+    component: () => import("@/views/Song/wiki.vue"),
+  },
+  // 评论
+  {
+    path: "/comment",
+    name: "comment",
+    beforeEnter: (to, _, next) => {
+      if (!to.query.id) next({ path: "/403" });
+      else next();
+    },
+    component: () => import("@/views/Comment.vue"),
+  },
   // 歌单
   {
     path: "/playlist",
@@ -136,6 +161,16 @@ const routes: Array<RouteRecordRaw> = [
       else next();
     },
     component: () => import("@/views/List/playlist.vue"),
+  },
+  // 流媒体歌单
+  {
+    path: "/streaming-playlist",
+    name: "streaming-playlist",
+    beforeEnter: (to, _, next) => {
+      if (!to.query.id) next({ path: "/403" });
+      else next();
+    },
+    component: () => import("@/views/List/streaming-playlist.vue"),
   },
   // 播客
   {
@@ -220,6 +255,26 @@ const routes: Array<RouteRecordRaw> = [
       },
     ],
   },
+  // 下载管理
+  {
+    path: "/download",
+    name: "download",
+    meta: { needApp: true },
+    component: () => import("@/views/Download/layout.vue"),
+    redirect: "/download/downloaded",
+    children: [
+      {
+        path: "downloaded",
+        name: "download-downloaded",
+        component: () => import("@/views/Download/downloaded.vue"),
+      },
+      {
+        path: "downloading",
+        name: "download-downloading",
+        component: () => import("@/views/Download/downloading.vue"),
+      },
+    ],
+  },
   // 本地歌曲
   {
     path: "/local",
@@ -242,6 +297,45 @@ const routes: Array<RouteRecordRaw> = [
         path: "albums",
         name: "local-albums",
         component: () => import("@/views/Local/albums.vue"),
+      },
+      {
+        path: "folders",
+        name: "local-folders",
+        component: () => import("@/views/Local/folders.vue"),
+      },
+      {
+        path: "playlists",
+        name: "local-playlists",
+        component: () => import("@/views/Local/playlists.vue"),
+      },
+    ],
+  },
+  // 流媒体
+  {
+    path: "/streaming",
+    name: "streaming",
+    component: () => import("@/views/Streaming/layout.vue"),
+    redirect: "/streaming/songs",
+    children: [
+      {
+        path: "songs",
+        name: "streaming-songs",
+        component: () => import("@/views/Streaming/song.vue"),
+      },
+      {
+        path: "artists",
+        name: "streaming-artists",
+        component: () => import("@/views/Streaming/artists.vue"),
+      },
+      {
+        path: "albums",
+        name: "streaming-albums",
+        component: () => import("@/views/Streaming/albums.vue"),
+      },
+      {
+        path: "playlists",
+        name: "streaming-playlists",
+        component: () => import("@/views/Streaming/playlists.vue"),
       },
     ],
   },
@@ -266,6 +360,31 @@ const routes: Array<RouteRecordRaw> = [
     path: "/500",
     name: "500",
     component: () => import("@/views/Status/500.vue"),
+  },
+];
+
+/**
+ * 路由配置
+ * @returns {Array<RouteRecordRaw>} 路由配置
+ */
+const routes: Array<RouteRecordRaw> = [
+  // 应用路由
+  {
+    path: "/",
+    component: AppLayout,
+    children: [...appRoutes],
+  },
+  // 桌面歌词
+  {
+    path: "/desktop-lyric",
+    name: "desktop-lyric",
+    meta: { needApp: true },
+    component: () => import("@/views/DesktopLyric/index.vue"),
+  },
+  // 404
+  {
+    path: "/:pathMatch(.*)*",
+    redirect: "/404",
   },
 ];
 

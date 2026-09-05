@@ -1,8 +1,14 @@
 <template>
   <Transition name="fade" mode="out-in">
-    <n-flex v-if="data.length > 0" :size="20" :class="['comment-list', { transparent }]" vertical>
-      <n-flex v-for="(item, index) in data" :key="index" :size="20" class="comments">
-        <div v-if="!transparent" class="user">
+    <n-flex
+      v-if="data.length > 0"
+      key="content"
+      :size="20"
+      :class="['comment-list', { transparent }]"
+      vertical
+    >
+      <n-flex v-for="(item, index) in data" :key="index" :size="0" class="comments">
+        <div v-if="!transparent && !hiddenCover" class="user">
           <div class="avatar">
             <n-image
               :src="
@@ -16,7 +22,7 @@
             >
               <template #placeholder>
                 <div class="cover-loading">
-                  <img src="/images/avatar.jpg?assest" class="loading-img" alt="loading-img" />
+                  <img src="/images/avatar.jpg?asset" class="loading-img" alt="loading-img" />
                 </div>
               </template>
             </n-image>
@@ -25,7 +31,7 @@
               v-if="item.user.isAnnualCount"
               class="annual"
               alt="annual"
-              src="/images/annual.png?assest"
+              src="/images/annual.png?asset"
               title="网易音乐人"
             />
           </div>
@@ -62,6 +68,10 @@
               <SvgIcon name="IP" :depth="3" />
               <n-text :depth="3">{{ item.ip.location }}</n-text>
             </div>
+            <!-- 抱一抱 -->
+            <div class="item hug" @click="handleHug(item)">
+              <SvgIcon name="FavoriteBorder" :depth="3" />
+            </div>
             <!-- 点赞 -->
             <div class="item like" @click="likeComment(item)">
               <SvgIcon
@@ -80,11 +90,11 @@
         </n-button>
       </n-flex>
     </n-flex>
-    <div v-else-if="loading" :class="['comment-list', { transparent }]">
+    <div v-else-if="loading" key="loading" :class="['comment-list', { transparent }]">
       <n-skeleton :repeat="20" />
     </div>
     <!-- 空列表 -->
-    <n-empty v-else description="空空如也，怎么什么都没有啊" size="large" />
+    <n-empty v-else key="empty" description="空空如也，怎么什么都没有啊" size="large" />
   </Transition>
 </template>
 
@@ -96,7 +106,10 @@ import { debounce } from "lodash-es";
 import { isLogin } from "@/utils/auth";
 import { openUserLogin } from "@/utils/modal";
 import emoji from "@/assets/data/emoji.json";
-import { commentLike } from "@/api/comment";
+import { commentLike, hugComment, getCommentHugList } from "@/api/comment";
+import { useDataStore } from "@/stores";
+
+const userStore = useDataStore();
 
 const props = defineProps<{
   data: CommentType[];
@@ -105,6 +118,9 @@ const props = defineProps<{
   loadMore?: boolean;
   // 透明
   transparent?: boolean;
+  // 资源 ID
+  resId: number | string;
+  hiddenCover?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -150,6 +166,52 @@ const likeComment = debounce(async (data: CommentType) => {
     window.$message.error(result.msg || "评论点赞失败");
   }
 }, 300);
+
+// 抱一抱
+const handleHug = debounce(async (item: CommentType) => {
+  if (!isLogin()) {
+    openUserLogin();
+    return;
+  }
+  // 本地歌曲不支持抱一抱
+  if (typeof props.resId !== "number") return;
+  try {
+    const result = await hugComment(userStore.userData.userId, item.id, props.resId);
+    if (result.code === 200) {
+      // 获取抱一抱列表以得到总数
+      try {
+        const listResult = await getCommentHugList(
+          userStore.userData.userId,
+          item.id,
+          props.resId,
+          1,
+          -1,
+          -1,
+          100,
+        );
+        const count =
+          listResult.data?.total ||
+          listResult.data?.count ||
+          listResult.data?.hugComments?.length ||
+          0;
+
+        if (count > 0) {
+          window.$message.success(`抱一抱成功，已有 ${count} 人向TA发送了抱一抱`);
+        } else {
+          window.$message.success("抱一抱成功");
+        }
+      } catch (e) {
+        console.error("Error fetching hug list:", e);
+        window.$message.success("抱一抱成功");
+      }
+    } else {
+      window.$message.error(result.msg || "抱一抱失败");
+    }
+  } catch (error) {
+    console.error("Hug comment error:", error);
+    window.$message.error("抱一抱失败");
+  }
+}, 300);
 </script>
 
 <style lang="scss" scoped>
@@ -172,6 +234,7 @@ const likeComment = debounce(async (data: CommentType) => {
       align-items: center;
       min-width: 60px;
       width: 60px;
+      margin-right: 12px;
       .avatar {
         position: relative;
         display: flex;
@@ -218,6 +281,10 @@ const likeComment = debounce(async (data: CommentType) => {
             color: var(--primary-hex);
           }
         }
+        .text {
+          white-space: pre-wrap;
+          user-select: text;
+        }
       }
       .reply {
         width: 100%;
@@ -225,7 +292,11 @@ const likeComment = debounce(async (data: CommentType) => {
         border-radius: 8px;
         font-size: 13px;
         margin-top: 6px;
-        background-color: rgba(var(--primary), 0.12);
+        background-color: rgba(var(--main-cover-color, var(--primary)), 0.12);
+        .text {
+          white-space: pre-wrap;
+          user-select: text;
+        }
       }
       .meta {
         padding-top: 12px;
@@ -238,8 +309,19 @@ const likeComment = debounce(async (data: CommentType) => {
             margin-right: 4px;
           }
         }
-        .like {
+        .hug {
           margin-left: auto;
+          cursor: pointer;
+          &:hover {
+            .n-icon {
+              color: var(--primary-hex);
+              :deep(svg) {
+                opacity: 1;
+              }
+            }
+          }
+        }
+        .like {
           cursor: pointer;
           &:hover {
             .n-icon,
@@ -257,7 +339,7 @@ const likeComment = debounce(async (data: CommentType) => {
   &.transparent {
     .comments {
       border-color: transparent;
-      background-color: rgba(var(--main-color), 0.08);
+      background-color: rgba(var(--main-cover-color, var(--primary)), 0.08);
       .content {
         font-size: 16px;
       }

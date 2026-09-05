@@ -1,4 +1,7 @@
-import { songLevelData } from "@/utils/meta";
+import { isElectron } from "@/utils/env";
+import { defaultAMLLDbServer, songLevelData } from "@/utils/meta";
+import { SongUnlockServer } from "@/core/player/SongManager";
+import { useSettingStore } from "@/stores";
 import request from "@/utils/request";
 
 // 获取歌曲详情
@@ -33,8 +36,22 @@ export const songUrl = (
     | "hires"
     | "jyeffect"
     | "sky"
+    | "dolby"
     | "jymaster" = "exhigh",
 ) => {
+  // 杜比全景声使用旧版接口，并传入特殊参数
+  if (level === "dolby") {
+    return request({
+      url: "/song/url",
+      params: {
+        id,
+        br: 999000,
+        immerseType: "c51",
+        timestamp: Date.now(),
+      },
+    });
+  }
+
   return request({
     url: "/song/url/v1",
     params: {
@@ -46,12 +63,18 @@ export const songUrl = (
 };
 
 // 获取解锁歌曲 URL
-export const unlockSongUrl = (id: number, keyword: string, server: "netease" | "kuwo") => {
-  const params = server === "netease" ? { id } : { keyword };
+export const unlockSongUrl = (
+  id: number,
+  keyword: string,
+  server: SongUnlockServer,
+  songName?: string,
+  artist?: string,
+) => {
+  const params = server === SongUnlockServer.NETEASE ? { id } : { keyword, songName, artist };
   return request({
     baseURL: "/api/unblock",
     url: `/${server}`,
-    params,
+    params: { ...params, noCookie: true },
   });
 };
 
@@ -63,6 +86,31 @@ export const songLyric = (id: number) => {
       id,
     },
   });
+};
+
+/**
+ * 获取歌曲 TTML 歌词
+ * @param id 音乐 id
+ * @returns TTML 格式歌词
+ */
+export const songLyricTTML = async (id: number) => {
+  if (isElectron) {
+    return request({ url: "/lyric/ttml", params: { id, noCookie: true } });
+  } else {
+    const settingStore = useSettingStore();
+    const server = settingStore.amllDbServer || defaultAMLLDbServer;
+    const url = server.replace("%s", String(id));
+    try {
+      const response = await fetch(url);
+      if (response === null || response.status !== 200) {
+        return null;
+      }
+      const data = await response.text();
+      return data;
+    } catch {
+      return null;
+    }
+  }
 };
 
 /**
@@ -128,6 +176,51 @@ export const songDynamicCover = (id: number) => {
 export const songChorus = (id: number) => {
   return request({
     url: "/song/chorus",
+    params: { id },
+  });
+};
+
+/**
+ * 歌曲百科 - 简要信息
+ * @param {number} id - 歌曲 id
+ */
+export const songWikiSummary = (id: number) => {
+  return request({
+    url: "/song/wiki/summary",
+    params: { id },
+  });
+};
+
+/**
+ * 乐谱列表
+ * @description 通过歌曲 id 获取该歌曲下的乐谱列表
+ */
+export const songSheetList = (id: number) => {
+  return request({
+    url: "/sheet/list",
+    params: { id },
+  });
+};
+
+/**
+ * 乐谱内容预览
+ * @description 通过乐谱 id 获取乐谱的完整内容
+ */
+export const songSheetPreview = (id: number) => {
+  return request({
+    url: "/sheet/preview",
+    params: { id },
+  });
+};
+
+/**
+ * 回忆坐标信息
+ * @description 获取当前歌曲的回忆坐标信息（同手机 APP 百科页的回忆坐标功能）
+ * @param id 歌曲 ID
+ */
+export const songFirstListenInfo = (id: number) => {
+  return request({
+    url: "/music/first/listen/info",
     params: { id },
   });
 };

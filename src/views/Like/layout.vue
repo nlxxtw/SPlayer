@@ -18,8 +18,9 @@
     <n-tabs
       v-if="dataStore.loginType !== 'uid'"
       v-model:value="likeType"
+      :type="isSmall ? 'line' : 'segment'"
       class="tabs"
-      type="segment"
+      justify-content="space-evenly"
       @update:value="(name: string) => router.push({ name })"
     >
       <n-tab name="like-playlists"> 歌单 </n-tab>
@@ -41,11 +42,14 @@
 </template>
 
 <script setup lang="ts">
+import { useMobile } from "@/composables/useMobile";
 import { useDataStore, useSettingStore } from "@/stores";
 
 const router = useRouter();
 const dataStore = useDataStore();
 const settingStore = useSettingStore();
+
+const { isSmall } = useMobile();
 
 const likeType = ref<string>((router.currentRoute.value?.name as string) || "like-playlists");
 
@@ -78,10 +82,15 @@ const likeData = computed(() => [
   },
 ]);
 
-onBeforeRouteUpdate((to) => {
-  if (to.matched[0].name !== "like") return;
-  likeType.value = to.name as string;
-});
+// 监听路由变化
+watch(
+  () => router.currentRoute.value.name,
+  (val) => {
+    if (val && (val as string).startsWith("like-")) {
+      likeType.value = val as string;
+    }
+  },
+);
 </script>
 
 <style lang="scss" scoped>
@@ -114,6 +123,12 @@ onBeforeRouteUpdate((to) => {
           margin-right: 4px;
         }
       }
+    }
+  }
+  // 512px
+  @media (max-width: 512px) {
+    .status {
+      display: none !important;
     }
   }
 }

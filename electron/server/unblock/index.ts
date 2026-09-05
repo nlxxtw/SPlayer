@@ -1,8 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { SongUrlResult } from "./unblock";
-import getKuwoSongUrl from "./kuwo";
-import log from "../../main/logger";
+import type { SongUrlResult } from "./unblock";
+import { serverLog } from "../../main/logger";
 import axios from "axios";
+import getKuwoSongUrl from "./kuwo";
+import getBodianSongUrl from "./bodian";
 
 /**
  * 直接获取 网易云云盘 链接
@@ -17,16 +18,16 @@ const getNeteaseSongUrl = async (id: number | string): Promise<SongUrlResult> =>
       params: { types: "url", id },
     });
     const songUrl = result.data.url;
-    log.info("🔗 NeteaseSongUrl URL:", songUrl);
+    serverLog.log("🔗 NeteaseSongUrl URL:", songUrl);
     return { code: 200, url: songUrl };
   } catch (error) {
-    log.error("❌ Get NeteaseSongUrl Error:", error);
+    serverLog.error("❌ Get NeteaseSongUrl Error:", error);
     return { code: 404, url: null };
   }
 };
 
 // 初始化 UnblockAPI
-const UnblockAPI = async (fastify: FastifyInstance) => {
+export const initUnblockAPI = async (fastify: FastifyInstance) => {
   // 主信息
   fastify.get("/unblock", (_, reply) => {
     reply.send({
@@ -49,6 +50,21 @@ const UnblockAPI = async (fastify: FastifyInstance) => {
       return reply.send(result);
     },
   );
+  // 构造匹配信息（fallback 用 lastIndexOf 兼容歌名含连字符的情况）
+  const buildMatchInfo = (query: { [key: string]: string }) => {
+    let songName = query.songName || "";
+    let artist = query.artist || "";
+    if (!songName && query.keyword) {
+      const lastIdx = query.keyword.lastIndexOf("-");
+      if (lastIdx > 0) {
+        songName = query.keyword.slice(0, lastIdx).trim();
+        artist = artist || query.keyword.slice(lastIdx + 1).trim();
+      } else {
+        songName = query.keyword.trim();
+      }
+    }
+    return { keyword: query.keyword || "", songName, artist };
+  };
   // kuwo
   fastify.get(
     "/unblock/kuwo",
@@ -56,13 +72,20 @@ const UnblockAPI = async (fastify: FastifyInstance) => {
       req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
       reply: FastifyReply,
     ) => {
-      const { keyword } = req.query;
-      const result = await getKuwoSongUrl(keyword);
+      const result = await getKuwoSongUrl(buildMatchInfo(req.query));
       return reply.send(result);
     },
   );
-
-  log.info("🌐 Register UnblockAPI successfully");
+  // bodian
+  fastify.get(
+    "/unblock/bodian",
+    async (
+      req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const result = await getBodianSongUrl(buildMatchInfo(req.query));
+      return reply.send(result);
+    },
+  );
+  serverLog.info("🌐 Register UnblockAPI successfully");
 };
-
-export default UnblockAPI;

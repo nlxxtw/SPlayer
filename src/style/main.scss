@@ -3,9 +3,73 @@
   padding: 0;
   user-select: none;
   box-sizing: border-box;
-  -webkit-user-drag: none;
   ::after {
     box-sizing: border-box;
+  }
+  &:focus {
+    outline: none;
+  }
+}
+
+:root {
+  // 图片模式
+  &.image {
+    --background-hex: rgba(0, 0, 0, 0.1) !important;
+    --surface-container-hex: rgba(0, 0, 0, 0.2) !important;
+    body {
+      --background-hex: rgba(var(--background), 0.1) !important;
+      --surface-container-hex: rgba(var(--surface-container), 0.2) !important;
+      --n-toggle-bar-color: rgba(var(--background), 0.2) !important;
+      --n-toggle-bar-color-hover: rgba(var(--background), 0.4) !important;
+    }
+    .n-layout-sider {
+      background-color: var(--surface-container-hex) !important;
+    }
+    .n-layout {
+      background-color: transparent !important;
+    }
+    .main-player {
+      background-color: var(--surface-container-hex);
+      backdrop-filter: blur(10px);
+    }
+    // 内置组件
+    .n-card,
+    .n-tag {
+      background-color: rgba(var(--background), 0.2) !important;
+      border-color: rgba(var(--primary), 0.1) !important;
+    }
+    .n-modal,
+    .n-popover-shared,
+    .n-float-button {
+      background-color: rgba(var(--background), 0.2) !important;
+      border-color: rgba(var(--primary), 0.1) !important;
+      backdrop-filter: blur(20px);
+    }
+    .n-list {
+      --n-merged-color-hover: rgba(var(--background), 0.2) !important;
+      --n-merged-color: transparent !important;
+      --n-merged-border-color: rgba(var(--background), 0.2) !important;
+    }
+    .n-layout-toggle-bar {
+      opacity: 0.3;
+      transition: opacity 0.3s var(--n-bezier);
+      .n-layout-toggle-bar__top,
+      .n-layout-toggle-bar__bottom {
+        background-color: color-mix(
+          in srgb,
+          rgb(var(--primary)) 40%,
+          rgb(var(--background)) 60%
+        ) !important;
+      }
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
+
+  // 特殊组件
+  .n-popselect-menu {
+    backdrop-filter: blur(10px);
   }
 }
 
@@ -13,6 +77,13 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+}
+
+a,
+img,
+video,
+audio {
+  -webkit-user-drag: none;
 }
 
 #app {
@@ -38,6 +109,9 @@ body {
   --n-tab-border-radius: 6px !important;
   .n-tabs-nav {
     position: relative;
+  }
+  .n-tabs-tab {
+    transition: all 0.3s var(--n-bezier);
   }
 }
 
@@ -71,6 +145,10 @@ body {
   --n-border-radius: 8px !important;
 }
 
+.n-popselect-menu {
+  --n-border-radius: 8px !important;
+}
+
 // n-message
 .n-message-container {
   bottom: 90px !important;
@@ -83,19 +161,29 @@ body {
 
 // slider
 .n-slider {
-  .n-slider-rail {
-    backdrop-filter: blur(10px);
+  // .n-slider-rail {
+  //   backdrop-filter: blur(10px);
+  // }
+  .n-slider-handle {
+    transition:
+      opacity 0.3s var(--n-bezier),
+      box-shadow 0.2s var(--n-bezier),
+      transform 0.3s var(--n-bezier),
+      background-color 0.3s var(--n-bezier) !important;
   }
+}
+.n-slider-handle-indicator {
+  --n-indicator-border-radius: 8px !important;
 }
 
 // popover
 .n-popover {
   border-radius: 8px !important;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(20px);
   overflow: hidden;
-  &:not(.n-popover--raw) {
-    color: var(--primary-hex);
-  }
+  // &:not(.n-popover--raw) {
+  //   color: var(--primary-hex);
+  // }
 }
 
 // layout-toggle-bar
@@ -191,13 +279,13 @@ body {
 }
 
 // select
-.n-select {
-  .n-base-selection {
-    .n-base-selection-label {
-      background-color: var(--n-border-color);
-    }
-  }
-}
+// .n-select {
+//   .n-base-selection {
+//     .n-base-selection-label {
+//       background-color: var(--n-border-color);
+//     }
+//   }
+// }
 
 // alert
 .n-alert {
@@ -205,26 +293,36 @@ body {
 }
 
 // tag
-.n-tag {
-  font-size: 13px;
-  padding: 0 16px;
-  line-height: 0;
-  cursor: pointer;
-  transition:
-    transform 0.3s,
-    background-color 0.3s,
-    color 0.3s;
-  background-color: rgba(var(--primary), 0.08);
-  &.choose {
-    background-color: rgba(var(--primary), 0.28);
-    color: var(--primary-hex);
-  }
-  &:hover {
-    background-color: rgba(var(--primary), 0.28);
-    color: var(--primary-hex);
-  }
-  &:active {
-    transform: scale(0.98);
+// .n-tag {
+//   font-size: 13px;
+//   padding: 0 16px;
+//   line-height: 0;
+//   cursor: pointer;
+//   transition:
+//     transform 0.3s,
+//     background-color 0.3s,
+//     color 0.3s;
+//   background-color: rgba(var(--primary), 0.08);
+//   &.choose {
+//     background-color: rgba(var(--primary), 0.28);
+//     color: var(--primary-hex);
+//   }
+//   &:hover {
+//     background-color: rgba(var(--primary), 0.28);
+//     color: var(--primary-hex);
+//   }
+//   &:active {
+//     transform: scale(0.98);
+//   }
+// }
+
+// .n-badge
+.n-badge {
+  .n-badge-sup {
+    background-color: rgba(var(--primary), 0.14);
+    .n-base-slot-machine {
+      color: rgb(var(--primary));
+    }
   }
 }
 
@@ -234,8 +332,8 @@ body {
 }
 
 ::selection {
-  background-color: var(--primary-hex);
-  color: var(--background-hex);
+  background-color: rgba(var(--primary), 0.28);
+  color: var(--primary-hex);
 }
 
 // markdown
@@ -246,4 +344,46 @@ body {
   margin-top: 12px !important;
   padding: 20px;
   border-radius: 8px;
+}
+
+// 列表页通用样式
+.album-list,
+.playlist-list,
+.liked-list,
+.radio-list {
+  display: flex;
+  flex-direction: column;
+  .song-list,
+  .list-comment,
+  .loading,
+  .n-empty {
+    padding-top: 240px;
+    transition:
+      padding 0.3s,
+      opacity 0.3s;
+  }
+  .list-detail.small {
+    & ~ .song-list,
+    & ~ .list-comment,
+    & ~ .loading,
+    & ~ .n-empty {
+      padding-top: 120px;
+    }
+  }
+  @media (max-width: 768px) {
+    .song-list,
+    .list-comment,
+    .loading,
+    .n-empty {
+      padding-top: 180px;
+    }
+    .list-detail.small {
+      & ~ .song-list,
+      & ~ .list-comment,
+      & ~ .loading,
+      & ~ .n-empty {
+        padding-top: 100px;
+      }
+    }
+  }
 }

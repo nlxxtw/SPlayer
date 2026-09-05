@@ -1,36 +1,34 @@
-import type { SongType, UpdateLogType } from "@/types/main";
+import { QualityType, SongType, UpdateLogType } from "@/types/main";
+import { AI_AUDIO_LEVELS, AI_AUDIO_KEYS } from "@/utils/meta";
 import { NTooltip, SelectOption } from "naive-ui";
 import { h, VNode } from "vue";
-import { useClipboard } from "@vueuse/core";
 import { getCacheData } from "./cache";
 import { updateLog } from "@/api/other";
 import { isEmpty } from "lodash-es";
 import { convertToLocalTime } from "./time";
 import { useSettingStore } from "@/stores";
 import { marked } from "marked";
+import { isElectron } from "./env";
 import SvgIcon from "@/components/Global/SvgIcon.vue";
+import Fuse from "fuse.js";
 
 type AnyObject = { [key: string]: any };
 
-// 必要数据
-let imageBlobURL: string = "";
-
-// 环境判断
-export const isDev = import.meta.env.MODE === "development" || import.meta.env.DEV;
-
-// 系统判断
-const userAgent = window.navigator.userAgent;
-export const isWin = userAgent.includes("Windows");
-export const isMac = userAgent.includes("Macintosh");
-export const isLinux = userAgent.includes("Linux");
-export const isElectron = userAgent.includes("Electron");
-
-// 链接跳转
+/**
+ * 打开链接
+ * @param url 链接地址
+ * @param target 打开方式（_self 或 _blank）
+ */
 export const openLink = (url: string, target: "_self" | "_blank" = "_blank") => {
   window.open(url, target);
 };
 
-// 图标渲染
+/**
+ * 渲染图标
+ * @param iconName 图标名称
+ * @param option 图标选项（大小和样式）
+ * @returns 图标组件
+ */
 export const renderIcon = (
   iconName: string,
   option: {
@@ -52,7 +50,11 @@ export const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-// 选项渲染
+/**
+ * 渲染选项
+ * @param param0 包含节点和选项的对象
+ * @returns 包含工具提示的节点
+ */
 export const renderOption = ({ node, option }: { node: VNode; option: SelectOption }) =>
   h(
     NTooltip,
@@ -63,53 +65,32 @@ export const renderOption = ({ node, option }: { node: VNode; option: SelectOpti
     },
   );
 
-// 模糊搜索
+/**
+ * 模糊搜索
+ * @param keyword 搜索关键词
+ * @param data 要搜索的数据数组
+ * @returns 包含匹配项的数组
+ */
 export const fuzzySearch = (keyword: string, data: SongType[]): SongType[] => {
   try {
-    const result: SongType[] = [];
-    const regex = new RegExp(keyword, "i");
+    if (!keyword || !data || !Array.isArray(data)) return [];
 
-    /**
-     * 递归函数：遍历对象及其嵌套属性，过滤包含关键词的对象
-     * @param {Object} obj - 要检查的对象
-     * @returns {boolean} - 如果找到匹配的属性值，返回 true；否则返回 false
-     */
-    const searchInObject = (obj: AnyObject): boolean => {
-      for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-          const value = obj[key];
-          // 如果属性值是对象，则递归调用
-          if (typeof value === "object" && value !== null) {
-            if (searchInObject(value)) {
-              return true;
-            }
-          }
-          // 检查属性值是否是字符串并包含关键词
-          if (value && typeof value === "string" && regex.test(value)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
+    const fuse = new Fuse(data, {
+      // 针对歌曲可读字段进行索引
+      keys: [
+        { name: "name", weight: 0.5 },
+        { name: "alia", weight: 0.2 },
+        { name: "artists", weight: 0.15 },
+        { name: "artists.name", weight: 0.15 },
+        { name: "album", weight: 0.1 },
+        { name: "album.name", weight: 0.1 },
+        { name: "dj.name", weight: 0.05 },
+      ],
+      threshold: 0.35, // 0 精确匹配 ~ 1 完全模糊
+      ignoreLocation: true, // 不要求关键词位置接近
+    });
 
-    if (!data) return [];
-
-    // 如果传入的是数组，遍历数组
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        if (searchInObject(item)) {
-          result.push(item);
-        }
-      }
-    } else {
-      // 如果传入的是对象，直接调用递归函数
-      if (searchInObject(data)) {
-        result.push(data);
-      }
-    }
-
-    return result;
+    return fuse.search(keyword).map((result) => result.item);
   } catch (error) {
     console.error("模糊搜索出现错误：", error);
     return [];
@@ -131,7 +112,10 @@ export const argbToRgb = (x: number): number[] => {
   return [r, g, b];
 };
 
-// 封面加载完成
+/**
+ * 封面加载完成时，设置透明度为 1
+ * @param e 事件对象
+ */
 export const coverLoaded = (e: Event) => {
   const target = e.target as HTMLElement | null;
   if (target && target.nodeType === Node.ELEMENT_NODE) {
@@ -139,7 +123,11 @@ export const coverLoaded = (e: Event) => {
   }
 };
 
-// 数字处理
+/**
+ * 格式化数字
+ * @param num 要格式化的数字
+ * @returns 格式化后的数字字符串
+ */
 export const formatNumber = (num: number): string => {
   if (num < 10000) {
     return num.toString();
@@ -150,7 +138,11 @@ export const formatNumber = (num: number): string => {
   }
 };
 
-// 文件大小处理
+/**
+ * 格式化文件大小
+ * @param bytes 文件大小（字节）
+ * @returns 格式化后的文件大小字符串
+ */
 export const formatFileSize = (bytes: number): string => {
   if (bytes < 1024) {
     return `${bytes} B`;
@@ -162,38 +154,47 @@ export const formatFileSize = (bytes: number): string => {
     return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
   }
 };
-
-// 将图片链接转为 BlobUrl
-export const convertImageUrlToBlobUrl = async (imageUrl: string) => {
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error("Network response was not ok");
-  }
-  // 将响应数据转换为 Blob 对象
-  const blob = await response.blob();
-  // 撤销之前生成的对象 URL
-  if (imageBlobURL) URL.revokeObjectURL(imageBlobURL);
-  // 生成对象 URL
-  imageBlobURL = URL.createObjectURL(blob);
-  return imageBlobURL;
-};
-
-// 复制文本
+/**
+ * 复制数据到剪贴板（原生实现）
+ * @param text 要复制的数据
+ * @param message 复制成功提示消息（可选）
+ */
 export const copyData = async (text: any, message?: string) => {
-  const { copy, copied, isSupported } = useClipboard({ legacy: true });
-  if (!isSupported.value) {
-    window.$message.error("暂时无法使用复制功能");
-    return;
+  if (!text) return;
+  const content =
+    typeof text === "string"
+      ? text.trim()
+      : Array.isArray(text)
+        ? text.join("\n")
+        : JSON.stringify(text, null, 2);
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(content);
+      window.$message.success(message ?? "已复制到剪贴板");
+      return;
+    } catch (err) {
+      console.error("clipboard.writeText 失败，尝试降级方案", err);
+    }
   }
-  // 开始复制
+  // 降级方案
   try {
-    if (!text) return;
-    text = typeof text === "string" ? text.trim() : JSON.stringify(text, null, 2);
-    await copy(text);
-    if (copied.value) {
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    // 避免页面滚动
+    textarea.style.position = "fixed";
+    textarea.style.top = "-9999px";
+    textarea.style.left = "-9999px";
+    // 添加到页面
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    // 执行复制
+    const success = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (success) {
       window.$message.success(message ?? "已复制到剪贴板");
     } else {
-      window.$message.error("复制出错，请重试");
+      throw new Error("execCommand 返回 false");
     }
   } catch (error) {
     window.$message.error("复制出错，请重试");
@@ -201,7 +202,10 @@ export const copyData = async (text: any, message?: string) => {
   }
 };
 
-// 获取剪贴板内容
+/*
+ * 获取剪贴板内容
+ * @returns 剪贴板内容字符串或 null
+ */
 export const getClipboardData = async (): Promise<string | null> => {
   try {
     const text = await navigator.clipboard.readText();
@@ -241,7 +245,10 @@ export const formatForGlobalShortcut = (shortcut: string): string => {
     .join("+");
 };
 
-// 获取更新日志
+/**
+ * 获取更新日志
+ * @returns 更新日志数组
+ */
 export const getUpdateLog = async (): Promise<UpdateLogType[]> => {
   const result = await getCacheData(updateLog, { key: "updateLog", time: 10 });
   if (!result || isEmpty(result)) return [];
@@ -257,35 +264,231 @@ export const getUpdateLog = async (): Promise<UpdateLogType[]> => {
   return updateLogs;
 };
 
+/** 更改本地目录选项 */
+type ChangeLocalPathOptions = {
+  /** 设置项 key */
+  settingsKey: string;
+  /** 标题 */
+  title: string;
+  /** 是否包含子文件夹 */
+  includeSubFolders: boolean;
+  /** 控制台输出的错误信息 */
+  errorConsole: string;
+  /** 错误信息 */
+  errorMessage: string;
+};
+
 /**
- * 更改本地目录
+ * 获取 更改本地目录
+ * @param settingsKey 设置项 key
+ * @param includeSubFolders 是否包含子文件夹
+ * @param errorConsole 控制台输出的错误信息
+ * @param errorMessage 错误信息
+ */
+const changeLocalPath =
+  (
+    options: ChangeLocalPathOptions = {
+      settingsKey: "localFilesPath",
+      includeSubFolders: true,
+      title: "选择文件夹",
+      errorConsole: "Error changing local path",
+      errorMessage: "更改本地歌曲文件夹出错，请重试",
+    },
+  ) =>
+  async (delIndex?: number) => {
+    const { settingsKey, includeSubFolders, title, errorConsole, errorMessage } = options;
+    try {
+      if (!isElectron) return;
+      const settingStore = useSettingStore();
+      // 删除目录
+      if (typeof delIndex === "number" && delIndex >= 0) {
+        settingStore[settingsKey].splice(delIndex, 1);
+        return;
+      }
+      // 添加目录（支持多选）
+      const selectedDirs = await window.electron.ipcRenderer.invoke("choose-path", title, true);
+      if (!selectedDirs || selectedDirs.length === 0) return;
+      // 转换为数组（兼容单选返回字符串的情况）
+      const dirsToAdd = Array.isArray(selectedDirs) ? selectedDirs : [selectedDirs];
+      // 记录成功添加的数量
+      let addedCount = 0;
+      let skippedCount = 0;
+      // 用于追踪本次批量添加中已添加的路径
+      const newlyAddedPaths: string[] = [];
+      for (const selectedDir of dirsToAdd) {
+        // 检查时需要包含原有路径和本次已添加的路径
+        const pathsToCheck = [...settingStore[settingsKey], ...newlyAddedPaths];
+        // 是否是完全相同的路径
+        const isExactMatch = await window.electron.ipcRenderer.invoke(
+          "check-if-same-path",
+          pathsToCheck,
+          selectedDir,
+        );
+        if (isExactMatch) {
+          skippedCount++;
+          continue;
+        }
+        // 检查是否为子文件夹关系
+        if (includeSubFolders) {
+          const isSubfolder = await window.electron.ipcRenderer.invoke(
+            "check-if-subfolder",
+            pathsToCheck,
+            selectedDir,
+          );
+          if (isSubfolder) {
+            skippedCount++;
+            continue;
+          }
+        }
+        // 通过所有检查，添加目录
+        settingStore[settingsKey].push(selectedDir);
+        newlyAddedPaths.push(selectedDir);
+        addedCount++;
+      }
+      // 显示结果提示
+      if (addedCount > 0 && skippedCount > 0) {
+        window.$message.success(`成功添加 ${addedCount} 个目录，跳过 ${skippedCount} 个重复目录`);
+      } else if (addedCount > 0) {
+        window.$message.success(`成功添加 ${addedCount} 个目录`);
+      } else if (skippedCount > 0) {
+        window.$message.warning(`所选目录已存在或有重叠，已跳过`);
+      }
+    } catch (error) {
+      console.error(`${errorConsole}: `, error);
+      window.$message.error(errorMessage);
+    }
+  };
+
+/**
+ * 更改本地音乐目录
  * @param delIndex 删除文件夹路径的索引
  */
-export const changeLocalPath = async (delIndex?: number) => {
-  try {
-    if (!isElectron) return;
-    const settingStore = useSettingStore();
-    if (typeof delIndex === "number" && delIndex >= 0) {
-      settingStore.localFilesPath.splice(delIndex, 1);
-    } else {
-      const selectedDir = await window.electron.ipcRenderer.invoke("choose-path");
-      if (!selectedDir) return;
-      // 检查是否为子文件夹
-      const defaultMusicPath = await window.electron.ipcRenderer.invoke("get-default-dir", "music");
-      const allPath = [defaultMusicPath, ...settingStore.localFilesPath];
-      const isSubfolder = await window.electron.ipcRenderer.invoke(
-        "check-if-subfolder",
-        allPath,
-        selectedDir,
-      );
-      if (!isSubfolder) {
-        settingStore.localFilesPath.push(selectedDir);
-      } else {
-        window.$message.error("添加的目录与现有目录有重叠，请重新选择");
-      }
-    }
-  } catch (error) {
-    console.error("Error changing local path:", error);
-    window.$message.error("更改本地歌曲文件夹出错，请重试");
+export const changeLocalMusicPath = changeLocalPath({
+  settingsKey: "localFilesPath",
+  includeSubFolders: true,
+  title: "选择本地歌曲文件夹",
+  errorConsole: "Error changing local path",
+  errorMessage: "更改本地歌曲文件夹出错，请重试",
+});
+
+/**
+ * 更改本地歌词目录
+ * @param delIndex 删除文件夹路径的索引
+ */
+export const changeLocalLyricPath = changeLocalPath({
+  settingsKey: "localLyricPath",
+  includeSubFolders: true,
+  title: "选择本地歌词文件夹",
+  errorConsole: "Error changing local lyric path",
+  errorMessage: "更改本地歌词文件夹出错，请重试",
+});
+
+/**
+ * 洗牌数组（Fisher-Yates）
+ */
+export const shuffleArray = <T>(arr: T[]): T[] => {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
   }
+  return copy;
+};
+
+/**
+ * 处理歌曲音质
+ * @param song 歌曲数据
+ * @param type 歌曲类型
+ * @returns 歌曲音质
+ */
+export const handleSongQuality = (
+  song: AnyObject | number,
+  type: "local" | "online" = "local",
+): QualityType | undefined => {
+  const settingStore = useSettingStore();
+  const { disableAiAudio } = settingStore;
+  if (!song) return undefined;
+  if (type === "local" && typeof song === "number") {
+    if (song >= 960000) return QualityType.HiRes;
+    if (song >= 441000) return QualityType.SQ;
+    if (song >= 320000) return QualityType.HQ;
+    if (song >= 160000) return QualityType.MQ;
+    return QualityType.LQ;
+  }
+
+  const levelQualityMap = {
+    jymaster: QualityType.Master,
+    dolby: QualityType.Dolby,
+    sky: QualityType.Spatial,
+    jyeffect: QualityType.Surround,
+    hires: QualityType.HiRes,
+    lossless: QualityType.SQ,
+    exhigh: QualityType.HQ,
+    higher: QualityType.MQ,
+    standard: QualityType.LQ,
+  };
+
+  // Fuck AI Filter: 如果是 AI 音质，跳过 level 属性判断，让后续遍历逻辑来确定真正的最高音质
+  const isAiLevel =
+    disableAiAudio &&
+    typeof song === "object" &&
+    song &&
+    (("level" in song && AI_AUDIO_LEVELS.includes(song.level)) ||
+      ("privilege" in song &&
+        AI_AUDIO_LEVELS.includes(song.privilege?.playMaxBrLevel ?? song.privilege?.plLevel)));
+
+  if (typeof song === "object" && song && !isAiLevel) {
+    // 含有 level 特殊处理（仅在非 AI 音质时使用）
+    if ("level" in song) {
+      const quality = levelQualityMap[song.level];
+      if (quality) return quality;
+    }
+    // 云盘歌曲适配
+    if ("privilege" in song) {
+      const privilege = song.privilege;
+      const quality =
+        levelQualityMap[privilege?.playMaxBrLevel] ?? levelQualityMap[privilege?.plLevel];
+      if (quality) return quality;
+    }
+  }
+
+  const order = [
+    { key: "jm", type: QualityType.Master },
+    { key: "db", type: QualityType.Dolby },
+    { key: "sk", type: QualityType.Spatial },
+    { key: "je", type: QualityType.Surround },
+    { key: "hr", type: QualityType.HiRes },
+    { key: "sq", type: QualityType.SQ },
+    { key: "h", type: QualityType.HQ },
+    { key: "m", type: QualityType.MQ },
+    { key: "l", type: QualityType.LQ },
+  ];
+
+  for (const itemKey of order) {
+    // 过滤 AI 音质
+    if (disableAiAudio && AI_AUDIO_KEYS.includes(itemKey.key)) {
+      continue;
+    }
+    if (song[itemKey.key] && Number(song[itemKey.key].br) > 0) {
+      return itemKey.type;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * 获取分享链接
+ * @param type 资源类型 (song, playlist, album, artist, mv, etc.)
+ * @param id 资源 ID
+ * @returns 分享链接
+ */
+export const getShareUrl = (type: string, id: number | string): string => {
+  const settingStore = useSettingStore();
+  const { shareUrlFormat } = settingStore;
+
+  if (shareUrlFormat === "mobile") {
+    return `https://y.music.163.com/m/${type}?id=${id}`;
+  }
+
+  return `https://music.163.com/#/${type}?id=${id}`;
 };

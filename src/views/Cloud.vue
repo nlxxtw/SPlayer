@@ -25,23 +25,18 @@
       <n-flex class="left" align="flex-end">
         <n-button
           :focusable="false"
-          :disabled="loading || !cloudData?.length"
-          :loading="loading"
+          :disabled="showLoading || !cloudData?.length"
+          :loading="showLoading"
           type="primary"
           strong
           secondary
           round
-          v-debounce="() => player.updatePlayList(cloudData)"
+          v-debounce="() => player.updatePlayList(listDataShow)"
         >
           <template #icon>
             <SvgIcon name="Play" />
           </template>
-          {{
-            loading
-              ? `
-              正在更新... (${cloudData.length === cloudCount ? 0 : cloudData.length}/${cloudCount})`
-              : "播放"
-          }}
+          {{ showLoading ? `正在加载... (${cloudData.length}/${cloudCount})` : "播放" }}
         </n-button>
         <n-button :focusable="false" class="more" strong secondary circle @click="getAllCloudMusic">
           <template #icon>
@@ -74,7 +69,13 @@
     </n-flex>
     <!-- 列表 -->
     <Transition name="fade" mode="out-in">
-      <SongList v-if="!searchValue || searchData?.length" :data="listDataShow" :loading="loading" />
+      <SongList
+        v-if="!searchValue || searchData?.length"
+        :data="listDataShow"
+        :loading="loading"
+        :doubleClickAction="searchData?.length ? 'add' : 'all'"
+        @removeSong="handleRemoveSong"
+      />
       <n-empty
         v-else
         :description="`搜不到关于 ${searchValue} 的任何歌曲呀`"
@@ -97,10 +98,11 @@ import { userCloud } from "@/api/cloud";
 import { formatSongsList } from "@/utils/format";
 import { fuzzySearch, renderIcon } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
-import player from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 const router = useRouter();
 const dataStore = useDataStore();
+const player = usePlayerController();
 
 // 是否激活
 const isActivated = ref<boolean>(false);
@@ -108,7 +110,7 @@ const isActivated = ref<boolean>(false);
 // 云盘数据
 const loading = ref<boolean>(false);
 const cloudCount = ref<number>(0);
-const cloudData = shallowRef<SongType[]>(dataStore.cloudPlayList);
+const cloudData = ref<SongType[]>(dataStore.cloudPlayList);
 const cloudSize = ref<{ size: number; maxSize: number }>({ size: 0, maxSize: 0 });
 
 // 模糊搜索数据
@@ -120,6 +122,9 @@ const listDataShow = computed<SongType[]>(() => {
   if (searchValue.value && searchData.value.length) return searchData.value;
   return cloudData.value;
 });
+
+// 加载状态
+const showLoading = computed(() => cloudData.value.length === 0 && loading.value);
 
 // 是否处于云盘页面
 const isCloudPage = computed<boolean>(() => router.currentRoute.value.name === "cloud");
@@ -175,6 +180,16 @@ watchDebounced(
   },
   { debounce: 300, maxWait: 1000 },
 );
+
+// 处理删除歌曲
+const handleRemoveSong = (ids: number[]) => {
+  // 从云盘数据中删除指定ID的歌曲
+  const updatedCloudData = cloudData.value.filter((song) => !ids.includes(song.id));
+  cloudData.value = updatedCloudData;
+  // 同步更新store中的数据
+  dataStore.setCloudPlayList(updatedCloudData);
+  // listVersion.value++;
+};
 
 onActivated(() => {
   if (!isActivated.value) {

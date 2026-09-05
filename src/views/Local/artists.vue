@@ -8,7 +8,7 @@
         :class="['artist-item', { choose: chooseArtist === key }]"
         @click="chooseArtist = key"
       >
-        <n-text class="name">{{ key }}</n-text>
+        <n-text class="name">{{ key || "未知艺术家" }}</n-text>
         <n-text class="num" depth="3">
           <SvgIcon name="Music" :depth="3" />
           {{ item.length }} 首
@@ -18,9 +18,10 @@
     <Transition name="fade" mode="out-in">
       <SongList
         :key="chooseArtist"
-        :data="chooseArtist ? artistData[chooseArtist] : []"
-        :loading="true"
+        :data="artistSongs"
+        :loading="artistSongs?.length ? false : true"
         :hidden-cover="!settingStore.showLocalCover"
+        @removeSong="handleRemoveSong"
       />
     </Transition>
   </div>
@@ -28,16 +29,25 @@
 
 <script setup lang="ts">
 import type { SongType } from "@/types/main";
-import { useSettingStore } from "@/stores";
+import { useLocalStore, useSettingStore } from "@/stores";
 import { isArray, some } from "lodash-es";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 const props = defineProps<{ data: SongType[] }>();
 
+const localStore = useLocalStore();
 const settingStore = useSettingStore();
+const player = usePlayerController();
+
+// 播放事件总线
+const localPlayEventBus = useEventBus("local-play");
 
 // 歌手数据
 const chooseArtist = ref<string>("");
 const artistData = computed<Record<string, SongType[]>>(() => formatArtistsList(props.data));
+
+// 对应歌手歌曲
+const artistSongs = computed<SongType[]>(() => artistData.value?.[chooseArtist.value] || []);
 
 // 区分歌手数据
 const formatArtistsList = (
@@ -77,6 +87,20 @@ const formatArtistsList = (
   chooseArtist.value = sortedArtists[0];
   return sortedAllArtists;
 };
+
+// 处理删除歌曲
+const handleRemoveSong = (ids: number[]) => {
+  // 从本地歌曲列表中删除指定ID的歌曲
+  const updatedSongs = localStore.localSongs.filter((song) => !ids.includes(song.id));
+  localStore.updateLocalSong(updatedSongs);
+};
+
+// 监听播放事件
+const router = useRouter();
+localPlayEventBus.on(() => {
+  if (router.currentRoute.value?.name !== "local-artists") return;
+  player.updatePlayList(artistSongs.value);
+});
 
 watch(
   () => chooseArtist.value,

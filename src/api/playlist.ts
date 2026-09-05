@@ -1,6 +1,9 @@
 import request from "@/utils/request";
 
-// 获取歌单详情
+/**
+ * 获取歌单详情
+ * @param {number} id - 歌单 id
+ */
 export const playlistDetail = (id: number) => {
   return request({
     url: "/playlist/detail",
@@ -13,7 +16,12 @@ export const playlistDetail = (id: number) => {
   });
 };
 
-// 获取歌单所有歌曲
+/**
+ * 获取歌单所有歌曲
+ * @param {number} id - 歌单 id
+ * @param {number} [limit=50] - 返回数量，默认 50
+ * @param {number} [offset=0] - 偏移数量，默认 0
+ */
 export const playlistAllSongs = (id: number, limit: number = 50, offset: number = 0) => {
   return request({
     url: "/playlist/track/all",
@@ -26,11 +34,13 @@ export const playlistAllSongs = (id: number, limit: number = 50, offset: number 
  * @param {number} id - 歌曲 id
  * @param {number} pid - 歌单 id
  * @param {number} sid - 要开始播放的歌曲的 id
+ * @param {AbortSignal} [signal] - 用于取消请求的信号
  */
-export const heartRateList = (id: number, pid: number, sid?: number) => {
+export const heartRateList = (id: number, pid: number, sid?: number, signal?: AbortSignal) => {
   return request({
     url: "/playmode/intelligence/list",
     params: { id, pid, sid, timestamp: Date.now() },
+    signal,
   });
 };
 
@@ -126,6 +136,23 @@ export const likePlaylist = (id: number, t: number = 1 | 2) => {
   return request({
     url: "/playlist/subscribe",
     params: { id, t, timestamp: Date.now() },
+  });
+};
+
+/**
+ * 更新歌单中歌曲顺序
+ * @param {number} pid - 歌单 id
+ * @param {number[]} ids - 歌曲 id 数组（按新顺序排列）
+ */
+export const songOrderUpdate = (pid: number, ids: number[]) => {
+  return request({
+    url: "/song/order/update",
+    method: "post",
+    data: {
+      pid,
+      ids: JSON.stringify(ids),
+    },
+    params: { timestamp: Date.now() },
   });
 };
 
